@@ -4,10 +4,12 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Swashbuckle.AspNetCore.Swagger;
+using Microsoft.Extensions.Hosting;
+using Microsoft.OpenApi.Models;
+using Swashbuckle.Swagger;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -24,25 +26,49 @@ namespace Example.Api
 
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddMvc()
-                .SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
+            services.AddMvc();
+                
+            //Allowing the Cors Policy , in order to call the web API from different domain 
+            services.AddCors(options =>
+            {
+                options.AddPolicy("CorsPolicy",
+                    builder =>
+                    {
+                        builder.AllowAnyOrigin()
+                      .SetIsOriginAllowed(_ => true)
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
+                      
+                    });
+            });
+            //Allow Cors Policy end 
 
             services.AddSwaggerGen(c =>
             {
-                c.SwaggerDoc("v1", new Info { Title = "Example API", Version = "v1" });
+                c.SwaggerDoc("v1", new OpenApiInfo { Title = "Example API", Version = "v1" });
 
-                c.AddSecurityDefinition("Bearer", new ApiKeyScheme
+                c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
                 {
                     Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
                     Name = "Authorization",
-                    In = "header",
-                    Type = "apiKey"
+                    In = ParameterLocation.Header,
+                    Type = SecuritySchemeType.ApiKey
                 });
 
-                c.AddSecurityRequirement(new Dictionary<string, IEnumerable<string>>
+                c.AddSecurityRequirement(new OpenApiSecurityRequirement
+            {
                 {
-                    { "Bearer", Enumerable.Empty<string>() }
-                });
+                    new OpenApiSecurityScheme
+                    {
+                        Reference = new OpenApiReference
+                        {
+                            Type = ReferenceType.SecurityScheme,
+                            Id = "Bearer"
+                        }
+                    },
+                    Array.Empty<string>()
+                }
+            });
             });
 
             services
@@ -62,16 +88,10 @@ namespace Example.Api
             services.AddScoped<IIdentityService, AzureAdIdentityService>();
         }
 
-        public void Configure(IApplicationBuilder app, IHostingEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            app.UseCors(builder =>
-            {
-                builder
-                    .SetIsOriginAllowed(_ => true)
-                    .AllowAnyHeader()
-                    .AllowAnyMethod()
-                    .AllowCredentials();
-            });
+            //Using the Cors Policy 
+            app.UseCors("CorsPolicy");
 
             app.UseAuthentication();
 
@@ -91,8 +111,15 @@ namespace Example.Api
                 c.SwaggerEndpoint("/swagger/v1/swagger.json", "Example API V1");
             });
 
-            app.UseHttpsRedirection();
-            app.UseMvc();
+            //app.UseHttpsRedirection();
+            app.UseAuthentication();
+            //app.UseAuthorization();
+            app.UseRouting();
+            app.UseAuthorization();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+            });
         }
     }
 }
